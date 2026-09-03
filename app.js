@@ -16,6 +16,7 @@ const $=id=>document.getElementById(id),introView=$('introView'),gameView=$('gam
 let state={};
 let activePlayers=[];
 let pendingPlayerSongs=[];
+const songVideoIds={};
 
 function loadYouTubeApi(){
   if(window.YT&&window.YT.Player)return;
@@ -35,7 +36,9 @@ function artistLine(song,extra=''){return `<span class="artist-line"><span class
 function youtubeEmbed(song){return `<div class="youtube-wrap" data-song-id="${song.id}"><div id="yt-player-${song.id}"></div></div>`;}
 function songCard(song,side){return `<div class="song-card-wrap">${youtubeEmbed(song)}<button class="song-card" type="button" data-song-id="${song.id}" data-side="${side}"><span class="song-number">PICK ${String(state.matchIndex+1).padStart(2,'0')}</span><span class="song-title">${song.title}</span>${artistLine(song)}<span class="pick-label">이 곡 선택</span></button></div>`;}
 function listCard(song,extra=''){return `<div class="revival-card-wrap">${youtubeEmbed(song)}<button class="revival-card" type="button" data-song-id="${song.id}"><strong>${song.title}</strong>${artistLine(song,extra)}<em>이 곡 선택</em></button></div>`;}
-function hydrateIcons(){document.querySelectorAll('.artist-icon').forEach(icon=>{const m=icon.className.match(/artist-icon-(\d+)/);if(!m)return;const song=SONGS[Number(m[1])];if(song)icon.textContent=song.artist.trim().charAt(0).toUpperCase();});}
+function applySongIcon(song){document.querySelectorAll(`.artist-icon-${song.id}`).forEach(icon=>{const videoId=songVideoIds[song.id];if(videoId){icon.textContent='';icon.style.backgroundImage=`url(https://i.ytimg.com/vi/${videoId}/hqdefault.jpg)`;icon.classList.add('has-thumb');}else{icon.textContent=song.artist.trim().charAt(0).toUpperCase();}});}
+function hydrateIcons(){SONGS.forEach(applySongIcon);}
+function syncVideoThumb(song,player){setTimeout(()=>{try{const videoId=player.getVideoData()?.video_id;if(videoId){songVideoIds[song.id]=videoId;applySongIcon(song);}}catch{}},350);}
 function destroyPlayers(){activePlayers.forEach(player=>{try{player.destroy();}catch{}});activePlayers=[];}
 function initYouTubePlayers(songs){
   pendingPlayerSongs=[...songs];
@@ -47,9 +50,13 @@ function initYouTubePlayers(songs){
     const player=new YT.Player(el,{
       width:'100%',height:'100%',
       playerVars:{playsinline:1,rel:0,listType:'playlist',list:PLAYLIST_ID,index:song.playlistIndex},
-      events:{onReady:event=>{
-        event.target.cuePlaylist({listType:'playlist',list:PLAYLIST_ID,index:song.playlistIndex,startSeconds:0});
-      }}
+      events:{
+        onReady:event=>{
+          event.target.cuePlaylist({listType:'playlist',list:PLAYLIST_ID,index:song.playlistIndex,startSeconds:0});
+          syncVideoThumb(song,event.target);
+        },
+        onStateChange:event=>{if(event.data===YT.PlayerState.CUED||event.data===YT.PlayerState.PLAYING)syncVideoThumb(song,event.target);}
+      }
     });
     activePlayers.push(player);
   });
