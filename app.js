@@ -10,23 +10,57 @@ const SONGS = [
   { title: '목화', artist: '보수동쿨러' },
   { title: '불꽃놀이', artist: '공원' },
   { title: '비틀비틀', artist: '김수영' },
-].map((song, id) => ({ ...song, id, playlistIndex: id + 1 }));
-const $=id=>document.getElementById(id),introView=$('introView'),gameView=$('gameView'),resultView=$('resultView'),matchArea=$('matchArea'),stageLabel=$('stageLabel'),stageTitle=$('stageTitle'),progressText=$('progressText'),progressBar=$('progressBar'),hintText=$('hintText');let state={};
+].map((song, id) => ({ ...song, id, playlistIndex: id }));
+
+const $=id=>document.getElementById(id),introView=$('introView'),gameView=$('gameView'),resultView=$('resultView'),matchArea=$('matchArea'),stageLabel=$('stageLabel'),stageTitle=$('stageTitle'),progressText=$('progressText'),progressBar=$('progressBar'),hintText=$('hintText');
+let state={};
+let activePlayers=[];
+let pendingPlayerSongs=[];
+
+function loadYouTubeApi(){
+  if(window.YT&&window.YT.Player)return;
+  if(document.getElementById('youtube-iframe-api'))return;
+  const tag=document.createElement('script');
+  tag.id='youtube-iframe-api';
+  tag.src='https://www.youtube.com/iframe_api';
+  document.head.appendChild(tag);
+}
+window.onYouTubeIframeAPIReady=()=>initYouTubePlayers(pendingPlayerSongs);
+loadYouTubeApi();
+
 function shuffle(items){const copy=[...items];for(let i=copy.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[copy[i],copy[j]]=[copy[j],copy[i]];}return copy;}
 function resetState(){state={stage:'first',queue:shuffle(SONGS),matchIndex:0,winners:[],losers:[],revivalPick:null,finalSix:[],eliminatePick:null};}
 function start(){resetState();introView.classList.add('hidden');resultView.classList.add('hidden');gameView.classList.remove('hidden');renderFirstRound();window.scrollTo({top:0,behavior:'smooth'});}
 function artistLine(song,extra=''){return `<span class="artist-line"><span class="artist-icon artist-icon-${song.id}" aria-hidden="true"></span><span>${song.artist}${extra}</span></span>`;}
-function youtubeEmbed(song){return `<div class="youtube-wrap" data-song-id="${song.id}"><iframe src="https://www.youtube.com/embed/videoseries?list=${PLAYLIST_ID}&index=${song.playlistIndex}&playsinline=1" title="${song.artist} - ${song.title}" loading="eager" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></div>`;}
+function youtubeEmbed(song){return `<div class="youtube-wrap" data-song-id="${song.id}"><div id="yt-player-${song.id}"></div></div>`;}
 function songCard(song,side){return `<div class="song-card-wrap">${youtubeEmbed(song)}<button class="song-card" type="button" data-song-id="${song.id}" data-side="${side}"><span class="song-number">PICK ${String(state.matchIndex+1).padStart(2,'0')}</span><span class="song-title">${song.title}</span>${artistLine(song)}<span class="pick-label">이 곡 선택</span></button></div>`;}
 function listCard(song,extra=''){return `<div class="revival-card-wrap">${youtubeEmbed(song)}<button class="revival-card" type="button" data-song-id="${song.id}"><strong>${song.title}</strong>${artistLine(song,extra)}<em>이 곡 선택</em></button></div>`;}
 function hydrateIcons(){document.querySelectorAll('.artist-icon').forEach(icon=>{const m=icon.className.match(/artist-icon-(\d+)/);if(!m)return;const song=SONGS[Number(m[1])];if(song)icon.textContent=song.artist.trim().charAt(0).toUpperCase();});}
-function renderFirstRound(){state.stage='first';const a=state.queue[state.matchIndex*2],b=state.queue[state.matchIndex*2+1];stageLabel.textContent='ROUND 01 · 생존전';stageTitle.textContent='더 공연하고 싶은 곡은?';progressText.textContent=`${state.matchIndex+1} / 5`;progressBar.style.width=`${((state.matchIndex+1)/5)*100}%`;hintText.textContent='두 영상을 직접 재생해 들어본 뒤 아래 선택 버튼을 누르세요.';matchArea.className='match-area head-to-head';matchArea.innerHTML=`${songCard(a,'a')}<div class="versus">VS</div>${songCard(b,'b')}`;matchArea.querySelectorAll('.song-card').forEach(btn=>btn.addEventListener('click',()=>chooseFirst(Number(btn.dataset.songId))));hydrateIcons();}
+function destroyPlayers(){activePlayers.forEach(player=>{try{player.destroy();}catch{}});activePlayers=[];}
+function initYouTubePlayers(songs){
+  pendingPlayerSongs=[...songs];
+  destroyPlayers();
+  if(!(window.YT&&window.YT.Player))return;
+  songs.forEach(song=>{
+    const el=document.getElementById(`yt-player-${song.id}`);
+    if(!el)return;
+    const player=new YT.Player(el,{
+      width:'100%',height:'100%',
+      playerVars:{playsinline:1,rel:0,listType:'playlist',list:PLAYLIST_ID,index:song.playlistIndex},
+      events:{onReady:event=>{
+        event.target.cuePlaylist({listType:'playlist',list:PLAYLIST_ID,index:song.playlistIndex,startSeconds:0});
+      }}
+    });
+    activePlayers.push(player);
+  });
+}
+function renderFirstRound(){state.stage='first';const a=state.queue[state.matchIndex*2],b=state.queue[state.matchIndex*2+1];stageLabel.textContent='ROUND 01 · 생존전';stageTitle.textContent='더 공연하고 싶은 곡은?';progressText.textContent=`${state.matchIndex+1} / 5`;progressBar.style.width=`${((state.matchIndex+1)/5)*100}%`;hintText.textContent='두 영상을 직접 재생해 들어본 뒤 아래 선택 버튼을 누르세요.';matchArea.className='match-area head-to-head';matchArea.innerHTML=`${songCard(a,'a')}<div class="versus">VS</div>${songCard(b,'b')}`;matchArea.querySelectorAll('.song-card').forEach(btn=>btn.addEventListener('click',()=>chooseFirst(Number(btn.dataset.songId))));hydrateIcons();initYouTubePlayers([a,b]);}
 function chooseFirst(id){const pair=state.queue.slice(state.matchIndex*2,state.matchIndex*2+2);state.winners.push(pair.find(s=>s.id===id));state.losers.push(pair.find(s=>s.id!==id));state.matchIndex++;state.matchIndex<5?renderFirstRound():renderRevival();}
-function renderRevival(){state.stage='revival';stageLabel.textContent='ROUND 02 · 패자부활전';stageTitle.textContent='한 곡만 다시 살린다면?';progressText.textContent='1곡 선택';progressBar.style.width='70%';hintText.textContent='탈락한 5곡을 영상으로 다시 들어보고 딱 한 곡을 부활시키세요.';matchArea.className='match-area';matchArea.innerHTML=`<div class="revival-grid">${state.losers.map(song=>listCard(song)).join('')}</div>`;matchArea.querySelectorAll('.revival-card').forEach(btn=>btn.addEventListener('click',()=>chooseRevival(Number(btn.dataset.songId))));hydrateIcons();}
+function renderRevival(){state.stage='revival';stageLabel.textContent='ROUND 02 · 패자부활전';stageTitle.textContent='한 곡만 다시 살린다면?';progressText.textContent='1곡 선택';progressBar.style.width='70%';hintText.textContent='탈락한 5곡을 영상으로 다시 들어보고 딱 한 곡을 부활시키세요.';matchArea.className='match-area';matchArea.innerHTML=`<div class="revival-grid">${state.losers.map(song=>listCard(song)).join('')}</div>`;matchArea.querySelectorAll('.revival-card').forEach(btn=>btn.addEventListener('click',()=>chooseRevival(Number(btn.dataset.songId))));hydrateIcons();initYouTubePlayers(state.losers);}
 function chooseRevival(id){state.revivalPick=state.losers.find(s=>s.id===id);state.finalSix=shuffle([...state.winners,state.revivalPick]);renderElimination();}
-function renderElimination(){state.stage='elimination';stageLabel.textContent='FINAL · 마지막 탈락전';stageTitle.textContent='6곡 중 한 곡을 뺀다면?';progressText.textContent='최종 5곡';progressBar.style.width='92%';hintText.textContent='영상을 다시 확인한 뒤 공연에서 뺄 한 곡을 선택하세요.';matchArea.className='match-area';matchArea.innerHTML=`<div class="revival-grid">${state.finalSix.map(song=>listCard(song,song.id===state.revivalPick.id?' · 패자부활':'')).join('')}</div>`;matchArea.querySelectorAll('.revival-card').forEach(btn=>btn.addEventListener('click',()=>confirmElimination(Number(btn.dataset.songId))));hydrateIcons();}
+function renderElimination(){state.stage='elimination';stageLabel.textContent='FINAL · 마지막 탈락전';stageTitle.textContent='6곡 중 한 곡을 뺀다면?';progressText.textContent='최종 5곡';progressBar.style.width='92%';hintText.textContent='영상을 다시 확인한 뒤 공연에서 뺄 한 곡을 선택하세요.';matchArea.className='match-area';matchArea.innerHTML=`<div class="revival-grid">${state.finalSix.map(song=>listCard(song,song.id===state.revivalPick.id?' · 패자부활':'')).join('')}</div>`;matchArea.querySelectorAll('.revival-card').forEach(btn=>btn.addEventListener('click',()=>confirmElimination(Number(btn.dataset.songId))));hydrateIcons();initYouTubePlayers(state.finalSix);}
 function confirmElimination(id){const song=state.finalSix.find(s=>s.id===id);if(!window.confirm(`“${song.title}”을 최종 탈락시키고 나머지 5곡을 확정할까요?`))return;state.eliminatePick=song;showResults();}
-function showResults(){const finalFive=state.finalSix.filter(s=>s.id!==state.eliminatePick.id);state.finalFive=finalFive;gameView.classList.add('hidden');resultView.classList.remove('hidden');$('resultList').innerHTML=finalFive.map((song,i)=>`<li class="result-item"><span class="rank">${i+1}</span><div><strong>${song.title}</strong>${artistLine(song,song.id===state.revivalPick.id?' · 패자부활 생존':'')}</div></li>`).join('');hydrateIcons();window.scrollTo({top:0,behavior:'smooth'});}
+function showResults(){destroyPlayers();const finalFive=state.finalSix.filter(s=>s.id!==state.eliminatePick.id);state.finalFive=finalFive;gameView.classList.add('hidden');resultView.classList.remove('hidden');$('resultList').innerHTML=finalFive.map((song,i)=>`<li class="result-item"><span class="rank">${i+1}</span><div><strong>${song.title}</strong>${artistLine(song,song.id===state.revivalPick.id?' · 패자부활 생존':'')}</div></li>`).join('');hydrateIcons();window.scrollTo({top:0,behavior:'smooth'});}
 async function shareResults(){const text=`🎸 공연곡 최종 5곡\n\n${state.finalFive.map((s,i)=>`${i+1}. ${s.artist} - ${s.title}`).join('\n')}`;try{await navigator.clipboard.writeText(text);toast('결과를 클립보드에 복사했어요.');}catch{window.prompt('결과를 복사하세요.',text);}}
 function toast(message){const el=$('toast');el.textContent=message;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),1800);}
-$('startBtn').addEventListener('click',start);$('restartBtn').addEventListener('click',start);$('shareBtn').addEventListener('click',shareResults);$('resetBtn').addEventListener('click',()=>{if(introView.classList.contains('hidden')&&!window.confirm('현재 투표를 지우고 처음으로 돌아갈까요?'))return;resetState();gameView.classList.add('hidden');resultView.classList.add('hidden');introView.classList.remove('hidden');});resetState();
+$('startBtn').addEventListener('click',start);$('restartBtn').addEventListener('click',start);$('shareBtn').addEventListener('click',shareResults);$('resetBtn').addEventListener('click',()=>{if(introView.classList.contains('hidden')&&!window.confirm('현재 투표를 지우고 처음으로 돌아갈까요?'))return;destroyPlayers();resetState();gameView.classList.add('hidden');resultView.classList.add('hidden');introView.classList.remove('hidden');});resetState();
