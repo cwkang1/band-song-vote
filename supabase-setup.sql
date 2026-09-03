@@ -24,3 +24,8 @@ on public.band_votes for update
 to anon
 using (true)
 with check (true);
+
+create policy "public delete band votes"
+on public.band_votes for delete
+to anon
+using (true);
