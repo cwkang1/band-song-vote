@@ -20,18 +20,18 @@ let state={},activePlayers=[],pendingPlayerSongs=[],voterName='';
 const songVideoIds={};
 
 function backendReady(){return Boolean(CONFIG.supabaseUrl&&CONFIG.supabaseAnonKey);}
-function apiHeaders(extra={}){return {'apikey':CONFIG.supabaseAnonKey,'Authorization':`Bearer ${CONFIG.supabaseAnonKey}`,'Content-Type':'application/json',...extra};}
+function apiHeaders(extra={}){return {'apikey':CONFIG.supabaseAnonKey,'Content-Type':'application/json',...extra};}
 async function fetchVotes(){
   if(!backendReady())return [];
   const res=await fetch(`${CONFIG.supabaseUrl}/rest/v1/band_votes?select=*&order=updated_at.asc`,{headers:apiHeaders()});
-  if(!res.ok)throw new Error(`votes fetch ${res.status}`);
+  if(!res.ok){const body=await res.text();throw new Error(`votes fetch ${res.status}: ${body}`);}
   return res.json();
 }
 async function saveVote(){
   if(!backendReady())throw new Error('backend-not-ready');
   const payload={voter:voterName,first_winners:state.winners.map(s=>s.id),revival_pick:state.revivalPick.id,eliminated_pick:state.eliminatePick.id,final_five:state.finalFive.map(s=>s.id),updated_at:new Date().toISOString()};
   const res=await fetch(`${CONFIG.supabaseUrl}/rest/v1/band_votes?on_conflict=voter`,{method:'POST',headers:apiHeaders({'Prefer':'resolution=merge-duplicates,return=minimal'}),body:JSON.stringify(payload)});
-  if(!res.ok)throw new Error(`vote save ${res.status}`);
+  if(!res.ok){const body=await res.text();throw new Error(`vote save ${res.status}: ${body}`);}
 }
 function scoreVotes(votes){
   return SONGS.map(song=>{
@@ -61,7 +61,7 @@ function renderCollective(votes){
   box.innerHTML=`<div class="member-status">${status}</div>${ranking}`;
   document.querySelectorAll('.name-btn').forEach(btn=>{btn.classList.toggle('already-voted',voted.has(btn.dataset.name));});
 }
-async function refreshCollective(){try{renderCollective(await fetchVotes());}catch{const box=$('collectiveBox');if(box)box.innerHTML='<div class="collective-note error">집계 데이터를 불러오지 못했어요.</div>';}}
+async function refreshCollective(){try{renderCollective(await fetchVotes());}catch(err){console.error(err);const box=$('collectiveBox');if(box)box.innerHTML='<div class="collective-note error">집계 데이터를 불러오지 못했어요.</div>';}}
 
 function loadYouTubeApi(){if(window.YT&&window.YT.Player)return;if(document.getElementById('youtube-iframe-api'))return;const tag=document.createElement('script');tag.id='youtube-iframe-api';tag.src='https://www.youtube.com/iframe_api';document.head.appendChild(tag);}
 window.onYouTubeIframeAPIReady=()=>initYouTubePlayers(pendingPlayerSongs);loadYouTubeApi();
@@ -85,7 +85,7 @@ function chooseRevival(id){state.revivalPick=state.losers.find(s=>s.id===id);sta
 function renderElimination(){destroyPlayers();state.stage='elimination';stageLabel.textContent=`${voterName} · FINAL · 마지막 탈락전`;stageTitle.textContent='6곡 중 한 곡을 뺀다면?';progressText.textContent='최종 5곡';progressBar.style.width='92%';hintText.textContent='공연에서 뺄 한 곡을 선택하세요.';matchArea.className='match-area';matchArea.innerHTML=`<div class="revival-grid">${state.finalSix.map(song=>listCard(song,song.id===state.revivalPick.id?' · 패자부활':'')).join('')}</div>`;matchArea.querySelectorAll('.revival-card').forEach(btn=>btn.addEventListener('click',()=>confirmElimination(Number(btn.dataset.songId))));hydrateIcons();}
 function confirmElimination(id){const song=state.finalSix.find(s=>s.id===id);if(!window.confirm(`“${song.title}”을 최종 탈락시키고 나머지 5곡을 확정할까요?`))return;state.eliminatePick=song;showResults();}
 async function showResults(){destroyPlayers();state.finalFive=state.finalSix.filter(s=>s.id!==state.eliminatePick.id);gameView.classList.add('hidden');resultView.classList.remove('hidden');$('resultOwner').textContent=`${voterName}의 선택`;$('resultList').innerHTML=state.finalFive.map((song,i)=>`<li class="result-item"><span class="rank">${i+1}</span><div><strong>${song.title}</strong>${artistLine(song,song.id===state.revivalPick.id?' · 패자부활 생존':'')}</div></li>`).join('');hydrateIcons();$('saveStatus').textContent='투표 저장 중…';
-  try{await saveVote();$('saveStatus').textContent='✓ 공용 집계에 저장됨';const votes=await fetchVotes();renderFinalAggregate(votes);}catch(err){$('saveStatus').textContent=backendReady()?'저장 실패 · 다시 시도 필요':'공용 저장소 연결 전 · 개인 결과만 표시';$('aggregateResult').innerHTML='';}
+  try{await saveVote();$('saveStatus').textContent='✓ 공용 집계에 저장됨';const votes=await fetchVotes();renderFinalAggregate(votes);}catch(err){console.error(err);$('saveStatus').textContent=backendReady()?'저장 실패 · 다시 시도 필요':'공용 저장소 연결 전 · 개인 결과만 표시';$('aggregateResult').innerHTML='';}
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function renderFinalAggregate(votes){const scored=scoreVotes(votes);const complete=votes.length>=MEMBERS.length;$('aggregateResult').innerHTML=`<div class="aggregate-head"><strong>${complete?'5명 최종 종합':'현재 종합'} · ${votes.length}/5명</strong><span>${complete?'상위 5곡 확정':'나머지 멤버 투표 대기'}</span></div><ol class="aggregate-list">${scored.map((s,i)=>`<li class="${i<5?'in':''}"><b>${i+1}</b><span><strong>${s.title}</strong><small>${s.artist}</small></span><em>${s.score}점</em></li>`).join('')}</ol>`;}
