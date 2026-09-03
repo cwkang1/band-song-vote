@@ -1,78 +1,97 @@
-const PLAYLIST_ID = 'PLV3ZKiyBvcMM';
-const MEMBERS = ['철우','예인','영웅','아린','규빈'];
-const SONGS = [
-  { title: 'Lean', artist: 'Tuesday Beach Club' },
-  { title: 'Replay', artist: '음성녹음' },
-  { title: 'Nostalgia', artist: '청난' },
-  { title: '애증', artist: '체즈베리' },
-  { title: 'Antifreeze', artist: '검정치마' },
-  { title: '이제안녕', artist: '조유리' },
-  { title: '조금만 더', artist: '밴드기린' },
-  { title: '목화', artist: '보수동쿨러' },
-  { title: '불꽃놀이', artist: '공원' },
-  { title: '비틀비틀', artist: '김수영' },
-].map((song, id) => ({ ...song, id, playlistIndex: id }));
+const PLAYLIST_ID='PLV3ZKiyBvcMM';
+const MEMBERS=['철우','예인','영웅','아린','규빈'];
+const SONGS=[
+  {title:'Lean',artist:'Tuesday Beach Club'},
+  {title:'Replay',artist:'음성녹음'},
+  {title:'Nostalgia',artist:'청난'},
+  {title:'애증',artist:'체즈베리'},
+  {title:'Antifreeze',artist:'검정치마'},
+  {title:'이제안녕',artist:'조유리'},
+  {title:'조금만 더',artist:'밴드기린'},
+  {title:'목화',artist:'보수동쿨러'},
+  {title:'불꽃놀이',artist:'공원'},
+  {title:'비틀비틀',artist:'김수영'},
+].map((song,id)=>({...song,id,playlistIndex:id}));
 
-const $=id=>document.getElementById(id),introView=$('introView'),gameView=$('gameView'),resultView=$('resultView'),matchArea=$('matchArea'),stageLabel=$('stageLabel'),stageTitle=$('stageTitle'),progressText=$('progressText'),progressBar=$('progressBar'),hintText=$('hintText'),startBtn=$('startBtn');
-let state={};
-let activePlayers=[];
-let pendingPlayerSongs=[];
-let voterName='';
+const $=id=>document.getElementById(id);
+const introView=$('introView'),gameView=$('gameView'),resultView=$('resultView'),matchArea=$('matchArea'),stageLabel=$('stageLabel'),stageTitle=$('stageTitle'),progressText=$('progressText'),progressBar=$('progressBar'),hintText=$('hintText'),startBtn=$('startBtn');
+const CONFIG=window.BAND_VOTE_CONFIG||{};
+let state={},activePlayers=[],pendingPlayerSongs=[],voterName='';
 const songVideoIds={};
 
-function loadYouTubeApi(){
-  if(window.YT&&window.YT.Player)return;
-  if(document.getElementById('youtube-iframe-api'))return;
-  const tag=document.createElement('script');
-  tag.id='youtube-iframe-api';
-  tag.src='https://www.youtube.com/iframe_api';
-  document.head.appendChild(tag);
+function backendReady(){return Boolean(CONFIG.supabaseUrl&&CONFIG.supabaseAnonKey);}
+function apiHeaders(extra={}){return {'apikey':CONFIG.supabaseAnonKey,'Authorization':`Bearer ${CONFIG.supabaseAnonKey}`,'Content-Type':'application/json',...extra};}
+async function fetchVotes(){
+  if(!backendReady())return [];
+  const res=await fetch(`${CONFIG.supabaseUrl}/rest/v1/band_votes?select=*&order=updated_at.asc`,{headers:apiHeaders()});
+  if(!res.ok)throw new Error(`votes fetch ${res.status}`);
+  return res.json();
 }
-window.onYouTubeIframeAPIReady=()=>initYouTubePlayers(pendingPlayerSongs);
-loadYouTubeApi();
+async function saveVote(){
+  if(!backendReady())throw new Error('backend-not-ready');
+  const payload={voter:voterName,first_winners:state.winners.map(s=>s.id),revival_pick:state.revivalPick.id,eliminated_pick:state.eliminatePick.id,final_five:state.finalFive.map(s=>s.id),updated_at:new Date().toISOString()};
+  const res=await fetch(`${CONFIG.supabaseUrl}/rest/v1/band_votes?on_conflict=voter`,{method:'POST',headers:apiHeaders({'Prefer':'resolution=merge-duplicates,return=minimal'}),body:JSON.stringify(payload)});
+  if(!res.ok)throw new Error(`vote save ${res.status}`);
+}
+function scoreVotes(votes){
+  return SONGS.map(song=>{
+    let first=0,revival=0,eliminated=0,finalCount=0;
+    votes.forEach(v=>{
+      if((v.first_winners||[]).includes(song.id))first++;
+      if(v.revival_pick===song.id)revival++;
+      if(v.eliminated_pick===song.id)eliminated++;
+      if((v.final_five||[]).includes(song.id))finalCount++;
+    });
+    return {...song,first,revival,eliminated,finalCount,score:first+revival-eliminated};
+  }).sort((a,b)=>b.score-a.score||b.first-a.first||b.revival-a.revival||a.eliminated-b.eliminated||b.finalCount-a.finalCount||a.id-b.id);
+}
+function renderCollective(votes){
+  const box=$('collectiveBox'); if(!box)return;
+  if(!backendReady()){
+    box.innerHTML='<div class="collective-note">5명 공용 집계 저장소 연결 대기중</div>';
+    return;
+  }
+  const voted=new Set(votes.map(v=>v.voter));
+  const status=MEMBERS.map(name=>`<span class="member-chip ${voted.has(name)?'done':''}">${voted.has(name)?'✓ ':''}${name}</span>`).join('');
+  let ranking='';
+  if(votes.length){
+    const scored=scoreVotes(votes);
+    ranking=`<div class="live-ranking"><div class="live-ranking-title">현재 종합 순위 · ${votes.length}/5명</div>${scored.map((s,i)=>`<div class="rank-row ${i<5?'in':''}"><b>${i+1}</b><span>${s.artist} - ${s.title}</span><em>${s.score}점</em></div>`).join('')}</div>`;
+  }
+  box.innerHTML=`<div class="member-status">${status}</div>${ranking}`;
+  document.querySelectorAll('.name-btn').forEach(btn=>{btn.classList.toggle('already-voted',voted.has(btn.dataset.name));});
+}
+async function refreshCollective(){try{renderCollective(await fetchVotes());}catch{const box=$('collectiveBox');if(box)box.innerHTML='<div class="collective-note error">집계 데이터를 불러오지 못했어요.</div>';}}
 
+function loadYouTubeApi(){if(window.YT&&window.YT.Player)return;if(document.getElementById('youtube-iframe-api'))return;const tag=document.createElement('script');tag.id='youtube-iframe-api';tag.src='https://www.youtube.com/iframe_api';document.head.appendChild(tag);}
+window.onYouTubeIframeAPIReady=()=>initYouTubePlayers(pendingPlayerSongs);loadYouTubeApi();
 function shuffle(items){const copy=[...items];for(let i=copy.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[copy[i],copy[j]]=[copy[j],copy[i]];}return copy;}
-function resetState(){state={stage:'first',queue:shuffle(SONGS),matchIndex:0,winners:[],losers:[],revivalPick:null,finalSix:[],eliminatePick:null};}
+function resetState(){state={stage:'first',queue:shuffle(SONGS),matchIndex:0,winners:[],losers:[],revivalPick:null,finalSix:[],eliminatePick:null,finalFive:[]};}
 function selectVoter(name){voterName=name;document.querySelectorAll('.name-btn').forEach(btn=>btn.classList.toggle('selected',btn.dataset.name===name));startBtn.disabled=false;startBtn.textContent=`${name} · 대진 추첨하고 시작`;}
 function start(){if(!voterName){toast('먼저 이름을 선택하세요.');return;}resetState();introView.classList.add('hidden');resultView.classList.add('hidden');gameView.classList.remove('hidden');renderFirstRound();window.scrollTo({top:0,behavior:'smooth'});}
 function artistLine(song,extra=''){return `<span class="artist-line"><span class="artist-icon artist-icon-${song.id}" aria-hidden="true"></span><span>${song.artist}${extra}</span></span>`;}
 function youtubeEmbed(song){return `<div class="youtube-wrap" data-song-id="${song.id}"><div id="yt-player-${song.id}"></div></div>`;}
 function songCard(song,side){return `<div class="song-card-wrap">${youtubeEmbed(song)}<button class="song-card" type="button" data-song-id="${song.id}" data-side="${side}"><span class="song-number">PICK ${String(state.matchIndex+1).padStart(2,'0')}</span><span class="song-title">${song.title}</span>${artistLine(song)}<span class="pick-label">이 곡 선택</span></button></div>`;}
 function listCard(song,extra=''){return `<div class="revival-card-wrap compact"><button class="revival-card" type="button" data-song-id="${song.id}"><strong>${song.title}</strong>${artistLine(song,extra)}<em>이 곡 선택</em></button></div>`;}
-function applySongIcon(song){document.querySelectorAll(`.artist-icon-${song.id}`).forEach(icon=>{const videoId=songVideoIds[song.id];if(videoId){icon.textContent='';icon.style.backgroundImage=`url(https://i.ytimg.com/vi/${videoId}/hqdefault.jpg)`;icon.classList.add('has-thumb');}else{icon.textContent=song.artist.trim().charAt(0).toUpperCase();}});}
+function applySongIcon(song){document.querySelectorAll(`.artist-icon-${song.id}`).forEach(icon=>{const videoId=songVideoIds[song.id];if(videoId){icon.textContent='';icon.style.backgroundImage=`url(https://i.ytimg.com/vi/${videoId}/hqdefault.jpg)`;icon.classList.add('has-thumb');}else icon.textContent=song.artist.trim().charAt(0).toUpperCase();});}
 function hydrateIcons(){SONGS.forEach(applySongIcon);}
 function syncVideoThumb(song,player){setTimeout(()=>{try{const videoId=player.getVideoData()?.video_id;if(videoId){songVideoIds[song.id]=videoId;applySongIcon(song);}}catch{}},350);}
 function destroyPlayers(){activePlayers.forEach(player=>{try{player.destroy();}catch{}});activePlayers=[];pendingPlayerSongs=[];}
-function initYouTubePlayers(songs){
-  pendingPlayerSongs=[...songs];
-  destroyPlayers();
-  pendingPlayerSongs=[...songs];
-  if(!(window.YT&&window.YT.Player))return;
-  songs.forEach(song=>{
-    const el=document.getElementById(`yt-player-${song.id}`);
-    if(!el)return;
-    const player=new YT.Player(el,{
-      width:'100%',height:'100%',
-      playerVars:{playsinline:1,rel:0,listType:'playlist',list:PLAYLIST_ID,index:song.playlistIndex},
-      events:{
-        onReady:event=>{
-          event.target.cuePlaylist({listType:'playlist',list:PLAYLIST_ID,index:song.playlistIndex,startSeconds:0});
-          syncVideoThumb(song,event.target);
-        },
-        onStateChange:event=>{if(event.data===YT.PlayerState.CUED||event.data===YT.PlayerState.PLAYING)syncVideoThumb(song,event.target);}
-      }
-    });
-    activePlayers.push(player);
-  });
-}
+function initYouTubePlayers(songs){pendingPlayerSongs=[...songs];destroyPlayers();pendingPlayerSongs=[...songs];if(!(window.YT&&window.YT.Player))return;songs.forEach(song=>{const el=$(`yt-player-${song.id}`);if(!el)return;const player=new YT.Player(el,{width:'100%',height:'100%',playerVars:{playsinline:1,rel:0,listType:'playlist',list:PLAYLIST_ID,index:song.playlistIndex},events:{onReady:event=>{event.target.cuePlaylist({listType:'playlist',list:PLAYLIST_ID,index:song.playlistIndex,startSeconds:0});syncVideoThumb(song,event.target);},onStateChange:event=>{if(event.data===YT.PlayerState.CUED||event.data===YT.PlayerState.PLAYING)syncVideoThumb(song,event.target);}}});activePlayers.push(player);});}
 function renderFirstRound(){state.stage='first';const a=state.queue[state.matchIndex*2],b=state.queue[state.matchIndex*2+1];stageLabel.textContent=`${voterName} · ROUND 01 · 생존전`;stageTitle.textContent='더 공연하고 싶은 곡은?';progressText.textContent=`${state.matchIndex+1} / 5`;progressBar.style.width=`${((state.matchIndex+1)/5)*100}%`;hintText.textContent='두 영상을 직접 재생해 들어본 뒤 아래 선택 버튼을 누르세요.';matchArea.className='match-area head-to-head';matchArea.innerHTML=`${songCard(a,'a')}<div class="versus">VS</div>${songCard(b,'b')}`;matchArea.querySelectorAll('.song-card').forEach(btn=>btn.addEventListener('click',()=>chooseFirst(Number(btn.dataset.songId))));hydrateIcons();initYouTubePlayers([a,b]);}
 function chooseFirst(id){const pair=state.queue.slice(state.matchIndex*2,state.matchIndex*2+2);state.winners.push(pair.find(s=>s.id===id));state.losers.push(pair.find(s=>s.id!==id));state.matchIndex++;state.matchIndex<5?renderFirstRound():renderRevival();}
 function renderRevival(){destroyPlayers();state.stage='revival';stageLabel.textContent=`${voterName} · ROUND 02 · 패자부활전`;stageTitle.textContent='한 곡만 다시 살린다면?';progressText.textContent='1곡 선택';progressBar.style.width='70%';hintText.textContent='탈락한 5곡 중 딱 한 곡을 다시 살리세요.';matchArea.className='match-area';matchArea.innerHTML=`<div class="revival-grid">${state.losers.map(song=>listCard(song)).join('')}</div>`;matchArea.querySelectorAll('.revival-card').forEach(btn=>btn.addEventListener('click',()=>chooseRevival(Number(btn.dataset.songId))));hydrateIcons();}
 function chooseRevival(id){state.revivalPick=state.losers.find(s=>s.id===id);state.finalSix=shuffle([...state.winners,state.revivalPick]);renderElimination();}
 function renderElimination(){destroyPlayers();state.stage='elimination';stageLabel.textContent=`${voterName} · FINAL · 마지막 탈락전`;stageTitle.textContent='6곡 중 한 곡을 뺀다면?';progressText.textContent='최종 5곡';progressBar.style.width='92%';hintText.textContent='공연에서 뺄 한 곡을 선택하세요.';matchArea.className='match-area';matchArea.innerHTML=`<div class="revival-grid">${state.finalSix.map(song=>listCard(song,song.id===state.revivalPick.id?' · 패자부활':'')).join('')}</div>`;matchArea.querySelectorAll('.revival-card').forEach(btn=>btn.addEventListener('click',()=>confirmElimination(Number(btn.dataset.songId))));hydrateIcons();}
 function confirmElimination(id){const song=state.finalSix.find(s=>s.id===id);if(!window.confirm(`“${song.title}”을 최종 탈락시키고 나머지 5곡을 확정할까요?`))return;state.eliminatePick=song;showResults();}
-function showResults(){destroyPlayers();const finalFive=state.finalSix.filter(s=>s.id!==state.eliminatePick.id);state.finalFive=finalFive;gameView.classList.add('hidden');resultView.classList.remove('hidden');$('resultOwner').textContent=`${voterName}의 선택`; $('resultList').innerHTML=finalFive.map((song,i)=>`<li class="result-item"><span class="rank">${i+1}</span><div><strong>${song.title}</strong>${artistLine(song,song.id===state.revivalPick.id?' · 패자부활 생존':'')}</div></li>`).join('');hydrateIcons();window.scrollTo({top:0,behavior:'smooth'});}
+async function showResults(){destroyPlayers();state.finalFive=state.finalSix.filter(s=>s.id!==state.eliminatePick.id);gameView.classList.add('hidden');resultView.classList.remove('hidden');$('resultOwner').textContent=`${voterName}의 선택`;$('resultList').innerHTML=state.finalFive.map((song,i)=>`<li class="result-item"><span class="rank">${i+1}</span><div><strong>${song.title}</strong>${artistLine(song,song.id===state.revivalPick.id?' · 패자부활 생존':'')}</div></li>`).join('');hydrateIcons();$('saveStatus').textContent='투표 저장 중…';
+  try{await saveVote();$('saveStatus').textContent='✓ 공용 집계에 저장됨';const votes=await fetchVotes();renderFinalAggregate(votes);}catch(err){$('saveStatus').textContent=backendReady()?'저장 실패 · 다시 시도 필요':'공용 저장소 연결 전 · 개인 결과만 표시';$('aggregateResult').innerHTML='';}
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function renderFinalAggregate(votes){const scored=scoreVotes(votes);const complete=votes.length>=MEMBERS.length;$('aggregateResult').innerHTML=`<div class="aggregate-head"><strong>${complete?'5명 최종 종합':'현재 종합'} · ${votes.length}/5명</strong><span>${complete?'상위 5곡 확정':'나머지 멤버 투표 대기'}</span></div><ol class="aggregate-list">${scored.map((s,i)=>`<li class="${i<5?'in':''}"><b>${i+1}</b><span><strong>${s.title}</strong><small>${s.artist}</small></span><em>${s.score}점</em></li>`).join('')}</ol>`;}
 async function shareResults(){const text=`🎸 ${voterName}의 공연곡 최종 5곡\n\n${state.finalFive.map((s,i)=>`${i+1}. ${s.artist} - ${s.title}`).join('\n')}`;try{await navigator.clipboard.writeText(text);toast('결과를 클립보드에 복사했어요.');}catch{window.prompt('결과를 복사하세요.',text);}}
 function toast(message){const el=$('toast');el.textContent=message;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),1800);}
+function backHome(){destroyPlayers();resetState();voterName='';document.querySelectorAll('.name-btn').forEach(btn=>btn.classList.remove('selected'));startBtn.disabled=true;startBtn.textContent='이름을 선택하세요';gameView.classList.add('hidden');resultView.classList.add('hidden');introView.classList.remove('hidden');refreshCollective();window.scrollTo({top:0,behavior:'smooth'});}
 document.querySelectorAll('.name-btn').forEach(btn=>btn.addEventListener('click',()=>selectVoter(btn.dataset.name)));
-startBtn.addEventListener('click',start);$('restartBtn').addEventListener('click',start);$('shareBtn').addEventListener('click',shareResults);$('resetBtn').addEventListener('click',()=>{if(introView.classList.contains('hidden')&&!window.confirm('현재 투표를 지우고 처음으로 돌아갈까요?'))return;destroyPlayers();resetState();voterName='';document.querySelectorAll('.name-btn').forEach(btn=>btn.classList.remove('selected'));startBtn.disabled=true;startBtn.textContent='이름을 선택하세요';gameView.classList.add('hidden');resultView.classList.add('hidden');introView.classList.remove('hidden');});resetState();
+startBtn.addEventListener('click',start);$('restartBtn').addEventListener('click',backHome);$('shareBtn').addEventListener('click',shareResults);$('resetBtn').addEventListener('click',()=>{if(introView.classList.contains('hidden')&&!window.confirm('현재 투표를 지우고 처음으로 돌아갈까요?'))return;backHome();});
+resetState();refreshCollective();
