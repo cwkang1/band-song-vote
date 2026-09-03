@@ -11,13 +11,13 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20260903-7" />
+  <link rel="stylesheet" href="styles.css?v=20260903-8" />
 </head>
 <body>
   <main class="app-shell">
     <header class="topbar">
       <div>
-        <p class="eyebrow">BAND SETLIST PICKER · v7</p>
+        <p class="eyebrow">BAND SETLIST PICKER · v8</p>
         <h1>공연곡 월드컵</h1>
       </div>
       <button id="resetBtn" class="icon-btn" type="button" aria-label="처음부터 다시하기">↻</button>
@@ -25,14 +25,17 @@
 
     <section class="hero" id="introView">
       <div class="hero-card">
-        <span class="pill">10곡 → 최종 5곡</span>
-        <h2>딱 5곡만 고르자.</h2>
-        <p>1차 대결에서 5곡을 살리고, 탈락곡은 패자부활전으로 한 번 더 기회를 얻습니다.</p>
+        <span class="pill">5명 투표 → 최종 5곡</span>
+        <h2>다섯 명 의견을 모으자.</h2>
+        <p>각자 월드컵을 한 번씩 진행하면 선택 결과가 합산되고, 5명 투표가 끝나면 종합 상위 5곡을 확정합니다.</p>
         <div class="flow">
           <div><strong>01</strong><span>랜덤 1:1 대결<br>10 → 5</span></div>
           <div><strong>02</strong><span>패자부활전<br>5 → 1</span></div>
           <div><strong>03</strong><span>최종 탈락전<br>6 → 5</span></div>
         </div>
+
+        <div id="collectiveBox" class="collective-box"></div>
+
         <div class="name-select">
           <span class="name-select-label">누가 투표하나요?</span>
           <div class="name-grid">
@@ -63,19 +66,21 @@
 
     <section id="resultView" class="result-view hidden">
       <div class="result-head">
-        <span class="pill accent">FINAL 5</span>
+        <span class="pill accent">MY FINAL 5</span>
         <span id="resultOwner" class="result-owner"></span>
-        <h2>공연곡 확정</h2>
-        <p>최종 선택된 5곡입니다.</p>
+        <h2>내 투표 완료</h2>
+        <p id="saveStatus">공용 집계에 저장 중…</p>
       </div>
       <ol id="resultList" class="result-list"></ol>
+      <div id="aggregateResult" class="aggregate-result"></div>
       <div class="result-actions">
-        <button id="shareBtn" class="primary-btn" type="button">결과 복사</button>
-        <button id="restartBtn" class="secondary-btn" type="button">다시 투표하기</button>
+        <button id="shareBtn" class="primary-btn" type="button">내 결과 복사</button>
+        <button id="restartBtn" class="secondary-btn" type="button">다른 멤버 투표</button>
       </div>
     </section>
   </main>
   <div id="toast" class="toast" role="status"></div>
-  <script src="app.js?v=20260903-7"></script>
+  <script src="config.js?v=20260903-8"></script>
+  <script src="app.js?v=20260903-8"></script>
 </body>
 </html>
